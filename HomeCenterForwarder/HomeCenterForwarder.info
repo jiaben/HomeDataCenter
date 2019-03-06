@@ -1,0 +1,110 @@
+#include <SPI.h>
+#include <RF24.h>
+#include "ArduinoJson.h"
+#include "printf.h"
+
+
+RF24 myRadio (5, 6);
+struct package
+{
+  int id = 0;
+  double temperature = 0.0;
+  double humidity = 0.0;
+  char  text[16] = "empty";
+};
+
+uint64_t wAddr = 0xB3B4B5B6CDLL;
+const uint64_t rAddress[] = {0x7878787878LL, 0xB3B4B5B6F1LL, 0xB3B4B5B6CDLL, 0xB3B4B5B6A3LL, 0xB3B4B5B60FLL, 0xB3B4B5B605LL };
+
+typedef struct package Package;
+Package data;
+
+struct package_forwarded
+{
+  int cmdid = 0;
+  int ForwarderId = 0;
+  uint16_t info_size = 0;
+};
+typedef struct package_forwarded Package_f;
+Package_f data_f;
+
+StaticJsonDocument<512> arr;
+
+void initJsonObj() {
+  for (int i = 0; i < 6; ++i) {
+    arr.createNestedObject();
+    arr[i]["room"] = i;
+    arr[i]["temp"] = 0;
+    arr[i]["humi"] = 0;
+    arr[i]["id"] = 0;
+  }
+}
+
+
+void setup() {
+  initJsonObj();
+  // Open serial communications and wait for port to open:
+  Serial.begin(9600);
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+
+  printf_begin();
+  myRadio.begin();
+
+  //myRadio.setChannel(11);
+  //myRadio.setAutoAck(false);
+  myRadio.setPALevel(RF24_PA_MAX);
+  myRadio.setDataRate( RF24_250KBPS);
+
+  myRadio.openReadingPipe(0, rAddress[0]);
+  myRadio.openReadingPipe(1, rAddress[1]);
+  myRadio.openReadingPipe(2, rAddress[2]);
+  myRadio.openReadingPipe(3, rAddress[3]);
+  myRadio.openReadingPipe(4, rAddress[4]);
+  myRadio.openReadingPipe(5, rAddress[5]);
+
+  myRadio.openWritingPipe(wAddr);
+
+  myRadio.startListening();
+  myRadio.printDetails();
+}
+
+void getRadio() {
+  uint8_t u_pipe = 0;
+  while (myRadio.available(&u_pipe)) {
+    myRadio.read( &data, sizeof(data) );
+    arr[u_pipe]["room"] = u_pipe;
+    arr[u_pipe]["temp"] = data.temperature;
+    arr[u_pipe]["humi"] = data.humidity;
+    arr[u_pipe]["id"] = data.id;
+  }
+}
+
+
+void forward_msg(){
+  char buf[512];
+  int bufSize = measureJson(arr);
+  serializeJson(arr, buf);
+  data_f.cmdid = 1;
+  data_f.ForwarderId = 1;
+  data_f.info_size = bufSize;
+
+  myRadio.write(&data_f, sizeof(data_f)); 
+  myRadio.write(buf, bufSize);
+}
+
+int serial_num = 0;
+void loop() {
+
+  if (myRadio.available())
+    getRadio();
+
+  while ( 10*60*1000 == (++serial_num)){
+    forward_msg();
+    serial_num = 0;
+  }
+
+  delay(1);
+}
+

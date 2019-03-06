@@ -1,22 +1,3 @@
-/*
-  Web Server
-
-  A simple web server that shows the value of the analog input pins.
-  using an Arduino Wiznet Ethernet shield.
-
-  Circuit:
-   Ethernet shield attached to pins 10, 11, 12, 13
-   Analog inputs attached to pins A0 through A5 (optional)
-
-  created 18 Dec 2009
-  by David A. Mellis
-  modified 9 Apr 2012
-  by Tom Igoe
-  modified 02 Sept 2015
-  by Arturo Guadalupi
-
-*/
-
 #include <SPI.h>
 #include <Ethernet.h>
 #include <RF24.h>
@@ -24,17 +5,23 @@
 #include "printf.h"
 
 
+const uint64_t rAddress[] = {
+    0x7878787878LL, 
+    0xB3B4B5B6F1LL, 
+    0xB3B4B5B6CDLL, 
+    0xB3B4B5B6A3LL, 
+    0xB3B4B5B60FLL, 
+    0xB3B4B5B605LL 
+  };
 RF24 myRadio (5, 6);
+
+
 struct package
 {
-  int id = 0;
-  double temperature = 0.0;
-  double humidity = 0.0;
-  char  text[16] = "empty";
+  int cmdid = 0;
+  int ForwarderId = 0;
+  uint16_t info_size = 0;
 };
-
-const uint64_t rAddress[] = {0x7878787878LL, 0xB3B4B5B6F1LL, 0xB3B4B5B6CDLL, 0xB3B4B5B6A3LL, 0xB3B4B5B60FLL, 0xB3B4B5B605LL };
-
 typedef struct package Package;
 Package data;
 
@@ -53,15 +40,10 @@ EthernetServer server(80);
 StaticJsonDocument<512> arr;
 
 void initJsonObj() {
-  arr.createNestedObject();
-  arr.createNestedObject();
-  arr.createNestedObject();
-
   for (int i = 0; i < 3; ++i) {
-    arr[i]["room"] = i;
-    arr[i]["temp"] = 0;
-    arr[i]["humi"] = 0;
-    arr[i]["id"] = 0;
+    arr.createNestedObject();
+    arr[i]["forwarder"] = i;
+    arr[i]["info"] = "";
   }
 }
 
@@ -128,11 +110,11 @@ void getRadio() {
     Serial.println(u_pipe);
     //for (int i = 0; i < pipe; ++i) {
     myRadio.read( &data, sizeof(data) );
-    arr[u_pipe]["room"] = u_pipe;
-    arr[u_pipe]["temp"] = data.temperature;
-    arr[u_pipe]["humi"] = data.humidity;
-    arr[u_pipe]["id"] = data.id;
-    Serial.println(data.text);
+    
+    char buf[512];
+    int info_size = data.info_size;
+    myRadio.read(buf, info_size);
+    arr[data.ForwarderId]["info"] = buf;
   }
 }
 void loop() {
